@@ -2,6 +2,7 @@
 import boto3
 import json
 import sys
+import logging
 from botocore.exceptions import ClientError
 
 access_key=''
@@ -9,25 +10,29 @@ secret_key=''
 endpoint=''
 region=''
 
-def usage():
-    sys.stderr.write("Usage: delete_all_versions.py <bucket name>\n")
-    
-# Get name bucket 
-if len(sys.argv)==2:
-    s3bucket=str(sys.argv[1])
-else:
-    sys.stderr.write("Invalid input\n")
-    usage()
-    sys.exit(1)
-
 # This should be 1000 or less. The 1000 is an AWS thingie.
 maxkeys=500
 
 # List the stuff that is deleted or not
 Quiet=True
 
-debug=False
-verbose=True
+
+# Choose one from DEBUG, INFO, WARNING, ERROR, CRITICAL
+level=logging.INFO
+
+logging.basicConfig(format='%(message)s', level=level)
+
+def usage():
+    logging.info("Usage: delete_all_versions.py <bucket name>")
+    
+    
+# Get name bucket 
+if len(sys.argv)==2:
+    s3bucket=str(sys.argv[1])
+else:
+    logging.critical("Invalid input")
+    usage()
+    sys.exit(1)
 
 # Open the connection.
 try:
@@ -37,7 +42,7 @@ try:
                             aws_access_key_id=access_key,
                             aws_secret_access_key=secret_key)
 except:
-    sys.stderr.write("Cannot connect\n")
+    logging.critical("Cannot connect")
     sys.exit(1)
 
 
@@ -45,19 +50,19 @@ except:
 try:
     status=client.get_bucket_versioning(Bucket=s3bucket)['Status']
 except KeyError:
-    sys.stderr.write(s3bucket+" does not have versioning enabled\n")
+    logging.critical(s3bucket+" does not have versioning enabled")
     sys.exit(1)
 except ClientError as error:
     if error.response['Error']['Code']=='NoSuchBucket':
-        sys.stderr.write(s3bucket+" does not exist\n")
+        logging.critical(s3bucket+" does not exist")
         sys.exit(1)
     else:
-        sys.stderr.write("Cannot get versioning information on "+s3bucket+"\n")
+        logging.critical("Cannot get versioning information on "+s3bucket)
         raise
     
 
 if status != 'Enabled':
-    sys.stderr.write("The versioning status of "+s3bucket+" is "+status)
+    logging.critical("The versioning status of "+s3bucket+" should be \"Enabled\" but it is "+status)
     sys.exit(1)
 # We're good
 
@@ -69,9 +74,7 @@ while is_truncated:
 # List object versions
     response=client.list_object_versions(Bucket=s3bucket,MaxKeys=maxkeys)
 
-    if debug:
-        print (json.dumps(response, indent=4,sort_keys=True, default=str))
-        print ('\n\n')
+    logging.debug(json.dumps(response, indent=4,sort_keys=True, default=str))
 
     is_truncated=response['IsTruncated']
 
@@ -88,8 +91,7 @@ while is_truncated:
             Objects.append({'Key':i['Key'],'VersionId':i['VersionId']})
 
     if len(Objects)==0:
-        if verbose:
-            print ("Nothing to delete.")
+        logging.warning("Nothing to delete")
         sys.exit(0)
 
     Delete={'Objects':Objects, 'Quiet': Quiet}
@@ -97,9 +99,6 @@ while is_truncated:
     response=client.delete_objects(Bucket=s3bucket,
                                    Delete=Delete)
 
-    if debug:
-        print (json.dumps(response, indent=4,sort_keys=True, default=str))
-        print ('\n\n')
+    logging.debug(json.dumps(response, indent=4,sort_keys=True, default=str))
 
-    if verbose:
-        print ("Sucessfully deleted "+str(len(Objects))+" objects.")
+    logging.info("Successfully deleted "+str(len(Objects))+" objects")
